@@ -1,0 +1,278 @@
+---
+title: "SQL Discussion"
+author: "Angel Alcala Ruiz"
+date: "2023-02-25"
+output: rmdformats::readthedown
+---
+
+## 1. Introduction
+
+Let's begin by loading in our packages and our connection to run SQL
+
+```{r}
+library(rmdformats)
+library(RSQLite)
+library(DBI)
+library(knitr)
+db <- dbConnect(RSQLite::SQLite(), ":memory:")
+```
+
+In SQL, data is organized into *tables*. A table has a fixed number of named **columns**. A **row** of the table represents a single data record and has one **value** for each column. For example, we have a table named `records` that stores information about the employees at a small company. Each of the eight rows represents an employee.
+
+```{sql, connection = db}
+CREATE TABLE records AS
+SELECT    "Ben Bitdiddle" AS Name, "Computer" AS Division, "Wizard" AS Title, 60000 AS Salary, "Oliver Warbucks" AS Supervisor UNION
+SELECT "Alyssa P Hacker",          "Computer",             "Programmer",      40000,             "Ben Bitdiddle"               UNION
+SELECT       "Cy D Fect",          "Computer",             "Programmer",      35000,             "Ben Bitdiddle"               UNION
+SELECT   "Lem E Tweakit",          "Computer",             "Technician",      25000,             "Ben Bitdiddle"               UNION
+SELECT  "Louis Reasoner",          "Computer",     "Programmer Trainee",      30000,           "Alyssa P Hacker"               UNION
+SELECT "Oliver Warbucks",    "Administration",             "Big Wheel" ,     150000,           "Oliver Warbucks"               UNION 
+SELECT    "Eben Scrooge",        "Accounting",       "Chief Accountant",      75000,           "Oliver Warbucks"               UNION
+SELECT "Robert Cratchet",        "Accounting",              "Scrivener",      18000,               "Eben Scroge";
+```
+
+```{sql, connection = db}
+SELECT * FROM records
+```
+
+## 2. Creating Tables
+
+We can use a `SELECT` statement to create tables. The following statement creates a table with a single row, with columns named "first" and "last":
+
+```{sql, connection = db}
+SELECT "Ben" AS first, "Bitdiddle" AS last UNION 
+SELECT "Louis",         "Reasoner";
+```
+
+We can choose which columns to show in the first part of the `SELECT`, we can filter out rows using a `WHERE` clause, and sort the resulting rows with an `ORDER BY` clause. 
+
+For instance, the following statement lists all information about employees with the "Programmer" title:
+
+```{sql, connection = db}
+SELECT * FROM records WHERE title = "Programmer"
+```
+
+The following statement lists the names and salaries of each employee under the accounting division, sorted in **descending** order by their salaries
+
+```{sql, connection = db}
+SELECT Name, Salary FROM records WHERE Division = "Accounting" ORDER BY Salary DESC;
+```
+
+An alternative option for listing the names and salaries of each employee under the accounting division in **descending** order by their salaries is the following:
+
+```{sql, connection = db}
+SELECT Name, Salary FROM records WHERE Division = "Accounting" ORDER BY -Salary;
+``` 
+
+
+Note that all valid SQL statements must be terminated by a semicolon (;). Additionally, you can split up your statement over many lines and add as much whitespace as you want, much like Scheme. But keep in mind that having consistent indentation and line breaking does make your code more readable to others (and your future self!)
+
+
+
+#### 2.1) Write a query that outputs the names of employees that Oliver Warbucks directly supervises.
+
+```{sql, connection = db}
+SELECT Name FROM records WHERE Supervisor = "Oliver Warbucks"
+```
+
+#### 2.2) Write a query that outputs all information about employees that supervise themselves
+
+```{sql, connection = db}
+SELECT * FROM records WHERE Name = Supervisor
+```
+
+#### 2.3) Write a query that outputs the names of all employees with salary greater than 50,000 in alphabetical order.
+
+
+```{sql, connection = db}
+SELECT Name FROM records WHERE Salary > 50000 ORDER BY Name
+```
+
+## 3. Joins
+
+Suppose we have another table `meetings` which records the divisional meetings
+
+```{sql, connection = db}
+CREATE TABLE meetings AS
+SELECT "Accounting" AS Division, "Monday" AS Day, "9am" AS Time UNION 
+SELECT "Computer"              , "Wednesday"    , "4pm"         UNION
+SELECT "Administration"        , "Monday"       , "11am"        UNION
+SELECT "Administration"        , "Wednesday"    , "4pm";
+``` 
+
+```{sql, connection = db}
+SELECT * FROM meetings
+```
+
+Data are combined by joining multiple tables together into one, a fundamental operation in database systems. There are many methods of joining, all closely related, but we will focus on just one method (the inner join) in this class.
+
+When tables are joined, the resulting table contains a new row for each combination of rows in the input tables. If two tables are joined and the left table has *m* rows and the right table has *n* rows, then the joined table will have *mn* rows. Joins are expressed in SQL by separating table names by commas in the `FROM` clause of a `SELECT` statement. 
+
+For example, let's look at the following
+
+```{sql, connection = db}
+SELECT Name, Day FROM records, meetings LIMIT 12;
+```
+
+The `records` table has 7 rows and the `meetings` table has 4 rows therefore the table `records, meetings` has 7*4 = 28 rows.
+
+Tables may have overlapping column names, and so we need a method for disambiguating column names by table. A table may also be joined with itself, and so we need a method for disambiguating tables. To do so, SQL allows us to give aliases to tables within a `FROM` clause using the keyword `AS` and to a column within a particular table using a dot expression. In the example below we find the name and title of Alysa P Hacker's supervisor.
+
+```{sql, connection = db}
+SELECT b.Name, b.Title FROM records AS a, records AS b
+WHERE a.Name = "Alyssa P Hacker" AND a.Supervisor = b.Name;
+```
+
+#### 3.1) Write a query that outputs the meeting days and times of all employees directly supervised by Oliver Warbucks.
+ 
+```{sql, connection = db}
+SELECT a.Name,b.Day,b.Time FROM records as a, meetings as b
+WHERE a.Supervisor = "Oliver Warbucks" AND a.Division = b.Division
+```
+
+#### 3.2) Write a query that outputs the names of employees whose supervisor is in a different division.
+
+```{sql, connection = db}
+SELECT a.Name, a.Supervisor  FROM records AS a, records AS b
+WHERE a.Supervisor = b.Name AND a.Division != b.Division;
+```
+ 
+#### 3.3) Write a query that outputs the names of all the pairs of employees that have a meeting at the same time. Make sure that if `A|B` appears in your output, then `B|A` does not appear as well (`A|A` should additionally not appear). 
+
+```{sql, connection = db}
+SELECT a.Name, b.Name FROM records AS a, records AS b
+WHERE a.Name != b.Name AND a.Division = b.Division LIMIT 11
+```
+ 
+In the output above we do have duplicates. That is both `A|B` and `B|A` both appear in the output. To remove these duplicates we can add an additional constraint in the `WHERE` clause as follows:
+
+```{sql, connection = db}
+SELECT a.Name, b.Name FROM records AS a, records AS b
+WHERE a.Name < b.Name AND a.Name != b.Name AND a.Division = b.Division
+```
+
+## 4. Aggregation
+
+So far, we have joined and manipulated individual rows using `SELECT` statements. But we can also perform aggregation operations over multiple rows with the same `SELECT` statements.
+
+We can use the `MAX`, `MIN`, `COUNT`, and `SUM` functions to retrieve more information from our initial tables.
+
+If we wanted to find the name and salary of the employee who makes the most money, we might say
+
+```{sql, connection = db}
+SELECT Name, MAX(Salary) FROM records;
+```
+
+Using the special `COUNT(*)` syntax, we can count the number of rows in our table to see the number of employees at the company.
+
+```{sql, connection = db}
+SELECT COUNT(*) FROM records
+```
+
+These commands can be performed on specific sets of rows in our table by using the `GROUP BY [column name]` clause. This clause takes all of the rows that have the same value in column name and groups them together.
+
+We can find the minimum salary earned in each division of the company.
+
+```{sql, connection = db}
+SELECT Division, MIN(Salary) FROM records GROUP BY Division
+```
+
+These groupings can be additionally filtered by the `HAVING` clause. In contrast to the `WHERE` clause, which filters out rows, the `HAVING` clause filters out entire groups.
+
+To find all titles that are held by more than one person, we say
+
+```{sql, connection = db}
+SELECT Title FROM records GROUP BY Title HAVING COUNT(*) > 1;
+```
+
+#### 4.1) Write a query that outputs each supervisor and the sum of salaries of all the employees they supervise.
+
+```{sql, connection = db}
+SELECT Supervisor, SUM(SALARY) FROM records GROUP BY Supervisor
+```
+
+#### 4.2) Write a query that outputs the days of the week for which fewer than 5 employees have a meeting. You may assume no department has more than one meeting on a given day.
+
+```{sql, connection = db}
+SELECT a.Division, b.Day, COUNT(a.Division) FROM records AS a, meetings AS b 
+WHERE a.Division = b.Division GROUP BY b.Day HAVING COUNT(a.Division) < 5;
+```
+
+#### 4.3) Write a query that outputs all divisions for which there is more than one employee, and all pairs of employees within that division that have a combined salary less than 100,000.
+
+```{sql, connection = db}
+SELECT a.Division, a.Name, a.Salary, b.Name, b.Salary, a.Salary + b.Salary FROM records AS a, records AS b 
+WHERE a.Name != b.Name AND a.Division = b.Division AND a.Salary + b.Salary < 100000
+ORDER BY a.Division
+```
+
+Just like in 3.3) here we can see that we have duplicates. For example, we have both pairs `A|B` and `B|A`. To not include duplicates we can do the following:
+
+```{sql, connection = db}
+SELECT a.Division, a.Name, a.Salary, b.Name, b.Salary, a.Salary + b.Salary FROM records AS a, records AS b 
+WHERE a.Name < b.Name AND a.Name != b.Name AND a.Division = b.Division AND a.Salary + b.Salary < 100000
+ORDER BY a.Division
+```
+
+## 5. Extra Questions
+
+Use the following table called `courses` for the questions below:
+
+```{sql, connection = db}
+CREATE TABLE courses AS
+SELECT "Dan Garcia" AS Professor, "CS 61C" AS Course, "Sp19" AS Semester UNION
+SELECT "John Denero"            , "CS 61A"          , "Fa18"             UNION 
+SELECT "Dan Garcia"             , "CS 10"           , "Fa18"             UNION
+SELECT "Josh Hug"               , "CS 61B"          , "Sp18"             UNION
+SELECT "John Denero"            , "CS 61A"          , "Sp18"             UNION
+SELECT "John Denero"            , "CS 61A"          , "Fa17"             UNION
+SELECT "Paul Hilfinger"         , "CS 61A"          , "Fa17"             UNION  
+SELECT "Paul Hilfinger"         , "CS 61A"          , "Sp17"             UNION
+SELECT "John Denero"            , "Data 8"          , "Sp17"             UNION
+SELECT "Josh Hug"               , "CS 61B"          , "Sp17"             UNION
+SELECT "Satish Rao"             , "CS 70"           , "Sp17"             UNION
+SELECT "Nicolas Weaver"         , "CS 61C"          , "Sp17"             UNION
+SELECT "Gerald Friedland"       , "CS 61C"          , "Sp17";
+```
+
+```{sql, connection = db}
+SELECT * FROM courses
+```
+
+#### 5.1 Create a table called `num_taught` that contains three columns: `professor`, the `course` they taught, and the number of `times` they taught each course.
+
+*Hint* For this problem, it may help to `GROUP BY` multiple columns. Multiple columns and full expressions can appear in the group by clause, and groups will be formed for every unique combination of values that result.
+
+```{sql, connection = db}
+CREATE TABLE num_taught AS
+SELECT Professor, Course, COUNT(Course) AS Times FROM courses GROUP BY Professor, Course
+```
+
+```{sql, connection = db}
+SELECT * FROM num_taught
+```
+
+#### 5.2 Write a query that outputs two professors and a course if they have taught that course the same number of times. You may use the `num_taught` table you created in the previous question.
+
+```{sql, connection = db}
+SELECT a.Professor, b.Professor, a.Course AS Course FROM num_taught AS a, num_taught AS b
+WHERE a.Professor < b.Professor AND a.Professor != b.Professor AND a.Course = b.Course AND a.Times = b.Times
+```
+
+#### 5.3 Write a query that outputs two professors if they co-taught (taught the same course at the same time) the same course more than once.
+
+Let's take a quick look at the `courses` table
+
+```{sql, connection = db}
+SELECT * FROM courses ORDER BY Semester
+```
+
+Therefore we have the following
+ 
+```{sql, connection = db}
+SELECT * FROM courses AS a, courses as b
+WHERE a.Professor < b.Professor AND a.Professor != b.Professor AND a.Course = b.Course AND a.Semester = b.Semester
+```
+
+
+
